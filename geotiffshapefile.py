@@ -7,6 +7,8 @@ import Polygon
 import numpy as np
 import shapefile
 import gdal
+import sys
+import yaml
 
 def snap_to_grid(geotransform, lat, lon):
   '''lat/lon to nearest grid point (x,y)'''
@@ -51,12 +53,22 @@ def shapes_iter(geotiff_file, shapefile_file, raster_band = 1):
   d = gdal.OpenShared(geotiff_file)
   s = shapefile.Reader(shapefile_file)
   fields = [x[0] for x in s.fields[1:]]
-  for i in s.numRecords:
+  for i in xrange(s.numRecords):
     record = s.record(i)
     shape = s.shape(i)
-    yield (dict(zip(fields,record)), slice_geotiff_by_shape(d, shape.points, raster_band))
+    data = dict(zip(fields,record))
+    data['raster-%i'%raster_band] = slice_geotiff_by_shape(d, shape.points, raster_band)
+    yield data
 
 
+def main(argv):
+  shapefile_file = argv[1]
+  geotiff_file = argv[2]
+  for i,rez in enumerate(shapes_iter(geotiff_file, shapefile_file)):
+    print yaml.dump({i: rez})
 
+
+if __name__ == "__main__":
+  main(sys.argv)
 
 
