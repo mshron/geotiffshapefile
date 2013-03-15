@@ -22,14 +22,13 @@ def grid_to_center_latlon(geotransform, x, y):
   lat = geotransform['top_left_y'] + geotransform['pixel_height']*(y+.5)
   return (lat, lon)
 
-def slice_geotiff_by_shape(dataset, polygon_array, raster_band=1):
+def slice_geotiff_by_shape(dataset, polygon, raster_band=1):
   '''Get a masked array corresponding to polygon from a GDal Dataset.
 
   Consider making this something which samples by NN instead, if the spaces are too small.
   
   This *assumes* a north-up map. If you want it to handle other ones, hack it in yourself.'''
-  p = Polygon.Polygon(polygon_array)
-  bbox = p.boundingBox()
+  bbox = polygon.boundingBox()
   geotransform = dict(zip("top_left_x,pixel_width,foo,top_left_y,bar,pixel_height".split(","), dataset.GetGeoTransform()))
   top_left_pt = snap_to_grid(geotransform, bbox[3], bbox[0])
   bottom_right_pt = snap_to_grid(geotransform, bbox[2], bbox[1])
@@ -41,11 +40,21 @@ def slice_geotiff_by_shape(dataset, polygon_array, raster_band=1):
       exact_j = top_left_pt[0]+j
       exact_i = top_left_pt[1]+i
       lon, lat = grid_to_center_latlon(geotransform, exact_j, exact_i) 
-      if p.isInside(lat,lon):
+      if polygon.isInside(lat,lon):
         out[i,j] = dataset.GetRasterBand(raster_band).ReadAsArray(exact_j,exact_i,1,1)
       else:
         out.mask[i,j] = 1
 
+  return out
+
+def shape_to_polygon(shape):
+  out = Polygon.Polygon()
+  if len(shape.parts) == 1:
+    out += Polygon.Polygon(shape.points)
+  else:
+    parts = list(shape.parts) + [-1]
+    for i in xrange(len(shape.parts)):
+      out += Polygon.Polygon(shape.points[parts[i]:parts[i+1]])
   return out
         
 def shapes_iter(geotiff_file, shapefile_file, raster_band = 1):
@@ -57,7 +66,9 @@ def shapes_iter(geotiff_file, shapefile_file, raster_band = 1):
     record = s.record(i)
     shape = s.shape(i)
     data = dict(zip(fields,record))
-    data['raster-%i'%raster_band] = slice_geotiff_by_shape(d, shape.points, raster_band)
+    p = shape_to_polygon(shape)
+    data['raster-%i'%raster_band] = slice_geotiff_by_shape(d, p, raster_band)
+    data['midpoint'] = p.center()
     yield data
 
 
